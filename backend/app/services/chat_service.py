@@ -2,10 +2,9 @@ from web3 import Web3
 import json
 import os
 from dotenv import load_dotenv
+from app.utils.ipfs import upload_to_ipfs, fetch_from_ipfs
+from app.db import crud, schemas
 from sqlalchemy.orm import Session
-from app.utils.ipfs import fetch_from_ipfs
-from app.db import crud, schemas  # DB 연동
-from app.db.models import ChatHistory
 
 load_dotenv()
 
@@ -23,23 +22,53 @@ with open("app/contracts/abi.json") as f:
 w3 = Web3(Web3.HTTPProvider(RPC_URL))
 contract = w3.eth.contract(address=Web3.to_checksum_address(CONTRACT_ADDRESS), abi=abi)
 
+
+def process_chat_history(user_id: str, user_message: str, bot_response: str, db: Session):
+    """
+    사용자 채팅 데이터를 IPFS에 저장하고, IPFS 해시를 DB와 온체인에 저장
+    """
+    try:
+        # IPFS에 채팅 데이터 업로드
+        data = {
+            "user_message": user_message,
+            "bot_response": bot_response
+        }
+        ipfs_url = upload_to_ipfs(data)
+
+        # DB에 채팅 기록 저장
+        chat_data = schemas.ChatHistoryCreate(user_id=user_id, ipfs_hash=ipfs_url)
+        crud.create_chat_history(db, chat_data)
+
+        # 온체인에 채팅 기록 저장
+        tx_hash = store_chat_to_chain(user_id, ipfs_url)
+
+        return ipfs_url
+
+    except Exception as e:
+        raise Exception(f"Failed to process chat history: {str(e)}")
+
+
 def store_chat_to_chain(user_address: str, ipfs_url: str) -> str:
     """
-    스마트 컨트랙트에 채팅 기록(IPFS 링크)를 저장
+    스마트 컨트랙트에 채팅 기록(IPFS 링크)을 저장
     """
-    nonce = w3.eth.get_transaction_count(PUBLIC_ADDRESS)
+    try:
+        nonce = w3.eth.get_transaction_count(PUBLIC_ADDRESS)
 
-    txn = contract.functions.storeChat(user_address, ipfs_url).build_transaction({
-        'from': PUBLIC_ADDRESS,
-        'nonce': nonce,
-        'gas': 200000,
-        'gasPrice': w3.to_wei('30', 'gwei')
-    })
+        txn = contract.functions.storeChat(ipfs_url).build_transaction({
+            'from': PUBLIC_ADDRESS,
+            'nonce': nonce,
+            'gas': 200000,
+            'gasPrice': w3.to_wei('30', 'gwei')
+        })
 
-    signed_txn = w3.eth.account.sign_transaction(txn, private_key=PRIVATE_KEY)
-    tx_hash = w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        signed_txn = w3.eth.account.sign_transaction(txn, private_key=PRIVATE_KEY)
+        tx_hash = w3.eth.send_raw_transaction(signed_txn.rawTransaction)
 
-    return w3.to_hex(tx_hash)
+        return w3.to_hex(tx_hash)
+
+    except Exception as e:
+        raise Exception(f"Failed to store chat to chain: {str(e)}")
 
 
 def get_chat_history(db: Session, user_id: str):
