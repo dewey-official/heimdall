@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from app.db import models, schemas
+from db import models, schemas
 
 # -------------------- User --------------------
 
