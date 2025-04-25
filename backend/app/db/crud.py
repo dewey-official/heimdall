@@ -16,7 +16,7 @@ def create_user(db: Session, user: schemas.UserCreate):
 
 # -------------------- Chat History --------------------
 
-def create_chat_history(db: Session, chat: schemas.ChatHistoryCreate):
+def create_chat_history(db: Session, chat: schemas.ChatHistoryRecord):
     db_chat = models.ChatHistory(user_id=chat.user_id, ipfs_hash=chat.ipfs_hash)
     db.add(db_chat)
     db.commit()

@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
 
@@ -9,9 +9,10 @@ class UserBase(BaseModel):
     user_id: str
 
     class Config:
-        schema_extra = {
+        from_attributes = True
+        json_schema_extra = {
             "example": {
-                "user_id": "0x1234567890abcdef1234567890abcdef12345678"  # 지갑 주소 예시
+                "user_id": "0x1234abcd5678efgh"
             }
         }
 
@@ -26,68 +27,112 @@ class UserOut(UserBase):
 
     class Config:
         from_attributes = True
-        schema_extra = {
-            "example": {
-                "user_id": "0x1234567890abcdef1234567890abcdef12345678",
-                "uuid": "123e4567-e89b-12d3-a456-426614174000",  # UUID 예시
-                "created_at": "2025-04-24T12:34:56",  # 예시 날짜
-                "updated_at": "2025-04-24T12:34:56",  # 예시 날짜
-                "deleted_at": None  # 삭제되지 않은 예시
-            }
-        }
 
-# ------------------- Chat History -------------------
+# ------------------- 1. GPT 호출 -------------------
 
-class ChatHistoryBase(BaseModel):
-    user_id: str
-    ipfs_hash: str
+class ChatRequest(BaseModel):
+    wallet_address: str
+    user_message: str
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
-                "user_id": "0x1234567890abcdef1234567890abcdef12345678",
-                "ipfs_hash": "QmZnpv1GnH5G9p8z93ymA3R7Ak94zB7WRXN1cYXhbD5f34"  # 예시 IPFS 해시
+                "wallet_address": "0x1234abcd5678efgh",
+                "user_message": "What's a good first date idea?"
             }
         }
 
-class ChatHistoryCreate(ChatHistoryBase):
-    pass
-
-class ChatHistoryOut(ChatHistoryBase):
-    uuid: UUID
-    created_at: datetime
-    updated_at: datetime
-    deleted_at: Optional[datetime] = None
+class GPTResponse(BaseModel):
+    bot_response: str
 
     class Config:
-        from_attributes = True
-        schema_extra = {
+        json_schema_extra = {
             "example": {
-                "user_id": "0x1234567890abcdef1234567890abcdef12345678",
-                "ipfs_hash": "QmZnpv1GnH5G9p8z93ymA3R7Ak94zB7WRXN1cYXhbD5f34",
-                "uuid": "123e4567-e89b-12d3-a456-426614174000",  # UUID 예시
-                "created_at": "2025-04-24T12:34:56",  # 예시 날짜
-                "updated_at": "2025-04-24T12:34:56",  # 예시 날짜
-                "deleted_at": None  # 삭제되지 않은 예시
+                "bot_response": "Try planning a casual coffee date in a quiet place!"
             }
         }
 
-# ------------------- Chat Process Response -------------------
+# ------------------- 2. IPFS 업로드 -------------------
 
-class ChatProcessResponse(BaseModel):
-    status: str
+class IPFSUploadRequest(BaseModel):
+    wallet_address: str
     user_message: str
     bot_response: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "wallet_address": "0x1234abcd5678efgh",
+                "user_message": "How do I impress on a first date?",
+                "bot_response": "Confidence and genuine interest go a long way!"
+            }
+        }
+
+class IPFSUploadResponse(BaseModel):
+    status: str
     ipfs_url: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "success",
+                "ipfs_url": "https://gateway.pinata.cloud/ipfs/QmExampleHash"
+            }
+        }
+
+# ------------------- 3. 온체인 저장 -------------------
+
+class StoreOnChainRequest(BaseModel):
+    wallet_address: str
+    ipfs_url: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "wallet_address": "0x1234abcd5678efgh",
+                "ipfs_url": "https://gateway.pinata.cloud/ipfs/QmExampleHash"
+            }
+        }
+
+class StoreOnChainResponse(BaseModel):
+    status: str
     tx_hash: str
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "status": "success",
-                "user_message": "Hello, how are you?",
-                "bot_response": "I'm doing great, thanks for asking!",
-                "ipfs_url": "https://gateway.pinata.cloud/ipfs/QmZnpv1GnH5G9p8z93ymA3R7Ak94zB7WRXN1cYXhbD5f34",
-                "tx_hash": "0xabc1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"  # 예시 트랜잭션 해시
+                "tx_hash": "0xabcdef1234567890"
+            }
+        }
+
+# ------------------- 4. 히스토리 -------------------
+
+class ChatHistoryRecord(BaseModel):
+    ipfs_hash: str
+    created_at: datetime
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "ipfs_hash": "https://gateway.pinata.cloud/ipfs/QmExampleHash",
+                "created_at": "2025-04-25T12:34:56"
+            }
+        }
+
+class ChatHistoryResponse(BaseModel):
+    user_id: str
+    history: List[ChatHistoryRecord]
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "user_id": "0x1234abcd5678efgh",
+                "history": [
+                    {
+                        "ipfs_hash": "https://gateway.pinata.cloud/ipfs/QmExampleHash",
+                        "created_at": "2025-04-25T12:34:56"
+                    }
+                ]
             }
         }

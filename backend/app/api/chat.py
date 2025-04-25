@@ -4,91 +4,80 @@ from services import chat_service
 from utils.ipfs import upload_to_ipfs
 from db import crud, schemas
 from db.database import get_db
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# POST /chat/process
-@router.post("/chat/process", response_model=schemas.ChatProcessResponse)
-def process_chat(payload: dict, db: Session = Depends(get_db)):
+# ------------------- 1. GPT 호출만 수행 -------------------
+@router.post("/chat/ask", response_model=schemas.GPTResponse)
+def ask_bot(payload: schemas.ChatRequest):
+    """
+    GPT를 호출하여 사용자 메시지에 대한 응답을 생성한다.
+    """
     try:
-        # 요청에서 user_id와 user_msg 추출
-        user_id = payload.get("wallet_address")
-        user_msg = payload.get("user_message")
+        user_msg = payload.user_message
+        logger.debug(f"GPT ask request: {user_msg}")
 
-        # 필드 확인
-        if not user_id or not user_msg:
-            raise HTTPException(status_code=400, detail="Missing required fields.")
+        if not user_msg:
+            raise HTTPException(status_code=400, detail="User message is required.")
 
-        # 사용자 확인 및 생성
-        user = crud.get_user_by_id(db, user_id)
-        if not user:
-            crud.create_user(db, schemas.UserCreate(user_id=user_id))
-
-        # GPT 응답 받기
         bot_msg = chat_service.ask_gpt(user_msg)
-
-        # 채팅 기록을 IPFS에 업로드하고 URL을 받음
-        ipfs_url, tx_hash = chat_service.process_chat_history(user_id, user_msg, bot_msg, db)
-
-        # 응답 반환
-        return schemas.ChatProcessResponse(
-            status="success",
-            user_message=user_msg,
-            bot_response=bot_msg,
-            ipfs_url=ipfs_url,
-            tx_hash=tx_hash
-        )
+        return schemas.GPTResponse(bot_response=bot_msg)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
+        logger.error(f"GPT ask failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"GPT ask failed: {str(e)}")
 
-
-# POST /chat/upload
-@router.post("/chat/upload", response_model=schemas.ChatProcessResponse)
-def upload_chat(payload: dict, db: Session = Depends(get_db)):
+# ------------------- 2. IPFS 업로드만 수행 -------------------
+@router.post("/chat/upload_ipfs", response_model=schemas.IPFSUploadResponse)
+def upload_to_ipfs_only(payload: schemas.IPFSUploadRequest):
+    """
+    유저/봇 대화 데이터를 IPFS에 업로드하고 해당 URL을 반환한다.
+    """
     try:
-        # 요청에서 user_id, user_msg, bot_msg 추출
-        user_id = payload.get("wallet_address")
-        user_msg = payload.get("user_message")
-        bot_msg = payload.get("bot_response")
+        data = {
+            "user_message": payload.user_message,
+            "bot_response": payload.bot_response
+        }
+        ipfs_url = upload_to_ipfs(data)
+        return schemas.IPFSUploadResponse(status="success", ipfs_url=ipfs_url)
 
-        # 필드 확인
-        if not user_id or not user_msg or not bot_msg:
+    except Exception as e:
+        logger.error(f"IPFS upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"IPFS upload failed: {str(e)}")
+
+# ------------------- 3. IPFS 해시 온체인 저장 -------------------
+@router.post("/chat/store", response_model=schemas.StoreOnChainResponse)
+def store_on_chain(payload: schemas.StoreOnChainRequest):
+    """
+    IPFS URL을 블록체인 스마트컨트랙트에 저장하고 트랜잭션 해시를 반환한다.
+    """
+    try:
+        user_id = payload.wallet_address
+        ipfs_url = payload.ipfs_url
+
+        if not user_id or not ipfs_url:
             raise HTTPException(status_code=400, detail="Missing required fields.")
 
-        # 사용자 확인 및 생성
-        user = crud.get_user_by_id(db, user_id)
-        if not user:
-            crud.create_user(db, schemas.UserCreate(user_id=user_id))
-
-        # 메시지를 IPFS에 업로드
-        data = {"user_message": user_msg, "bot_response": bot_msg}
-        ipfs_url = upload_to_ipfs(data)
-
-        # 채팅 기록 데이터베이스에 저장
-        crud.create_chat_history(db, schemas.ChatHistoryCreate(user_id=user_id, ipfs_hash=ipfs_url))
-
-        # 블록체인에 채팅 저장 후 트랜잭션 해시 받기
         tx_hash = chat_service.store_chat_to_chain(user_id, ipfs_url)
-
-        # 응답 반환
-        return schemas.ChatProcessResponse(
-            status="success",
-            user_message=user_msg,
-            bot_response=bot_msg,
-            ipfs_url=ipfs_url,
-            tx_hash=tx_hash
-        )
+        return schemas.StoreOnChainResponse(status="success", tx_hash=tx_hash)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+        logger.error(f"On-chain store failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"On-chain store failed: {str(e)}")
 
-
-# GET /chat/history
-@router.get("/chat/history")
+# ------------------- 4. 유저별 채팅 히스토리 조회 -------------------
+@router.get("/chat/history", response_model=schemas.ChatHistoryResponse)
 def get_history(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """
+    유저 주소를 기반으로 IPFS 기반의 채팅 히스토리 목록을 조회한다.
+    """
     try:
-        # 사용자 ID에 대한 채팅 기록 반환
         return chat_service.get_chat_history(db, user_id)
     except Exception as e:
+        logger.error(f"History fetch failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"History fetch failed: {str(e)}")

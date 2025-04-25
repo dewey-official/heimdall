@@ -13,9 +13,15 @@ PINATA_URL = "https://api.pinata.cloud/pinning/pinJSONToIPFS"
 if not PINATA_API_KEY or not PINATA_SECRET_API_KEY:
     raise EnvironmentError("❌ Pinata API 키가 .env 파일에 설정되지 않았습니다.")
 
+def _ascii_safe_url(ipfs_url: str) -> str:
+    """
+    ASCII 인코딩으로 안전한 문자열로 변환 (스마트 컨트랙트 호환을 위해)
+    """
+    return ipfs_url.encode("ascii", "ignore").decode()
+
 def upload_to_ipfs(data: Dict[str, Any]) -> str:
     """
-    JSON 데이터를 Pinata에 업로드하고, IPFS 게이트웨이 URL을 반환합니다.
+    JSON 데이터를 Pinata에 업로드하고, ASCII-safe IPFS URL을 반환합니다.
     """
     headers = {
         "Content-Type": "application/json",
@@ -38,7 +44,8 @@ def upload_to_ipfs(data: Dict[str, Any]) -> str:
     if not ipfs_hash:
         raise ValueError("❌ 응답에서 IPFS 해시를 찾을 수 없습니다.")
 
-    return f"https://gateway.pinata.cloud/ipfs/{ipfs_hash}"
+    raw_url = f"https://gateway.pinata.cloud/ipfs/{ipfs_hash}"
+    return _ascii_safe_url(raw_url)
 
 
 def fetch_from_ipfs(ipfs_url: str) -> Dict[str, Any]:
