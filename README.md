@@ -1,12 +1,11 @@
-
 ```
 vahalla
 ├─ backend
-│  ├─ alembic.ini
 │  ├─ app
 │  │  ├─ api
 │  │  │  └─ chat.py
 │  │  ├─ contracts
+│  │  │  └─ ChatContract.json
 │  │  ├─ db
 │  │  │  ├─ crud.py
 │  │  │  ├─ database.py
@@ -14,14 +13,15 @@ vahalla
 │  │  │  └─ schemas.py
 │  │  ├─ main.py
 │  │  ├─ services
-│  │  │  ├─ chat_service.py
-│  │  │  └─ deploy_contract.py
+│  │  │  └─ chat_service.py
 │  │  └─ utils
+│  │     ├─ contract.py
 │  │     └─ ipfs.py
 │  └─ scripts
-└─ frontend
-   ├─ app.js
-   ├─ index.html
-   └─ styles.css
+├─ frontend
+│  ├─ app.js
+│  ├─ index.html
+│  └─ styles.css
+└─ README.md
 
 ```
